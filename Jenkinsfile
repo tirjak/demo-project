@@ -1,25 +1,18 @@
 pipeline {
-    agent {
-        kubernetes {
-            // Must match the name of the cloud provider in your Jenkins settings
-            cloud 'eks-cluster' 
-            namespace 'jenkins'
-            defaultContainer 'maven'
-            yaml '''
-apiVersion: v1
-kind: Pod
-metadata:
-  labels:
-    component: jenkins-agent
-spec:
-  containers:
-  - name: maven
-    image: maven:3.9.6-eclipse-temurin-17
-    command:
-    - cat
-    tty: true
-'''
-        }
+    agent any
+
+    tools {
+        jdk   'JDK-17'
+        maven 'Maven-3'
+    }
+
+    environment {
+        ECR_REGISTRY   = "${ECR_REGISTRY}"    // e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com
+        ECR_REPOSITORY = "${ECR_REPOSITORY}"  // e.g. demo-project
+        AWS_REGION     = "${AWS_REGION}"      // e.g. us-east-1
+        SONAR_HOST_URL = "${SONAR_HOST_URL}"  // e.g. http://localhost:9000
+        IMAGE_TAG      = ''
+        FULL_IMAGE     = ''
     }
 
     stages {
