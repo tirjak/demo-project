@@ -35,7 +35,7 @@ pipeline {
     
     post {
         always {
-            echo 'Pipeline finished. EKS will automatically terminate this agent pod.'
+            echo 'Pipeline finished.'
         }
     }
 }
