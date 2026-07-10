@@ -19,7 +19,7 @@ pipeline {
         stage('Checkout Code') {
             steps {
                 // Using your specific GitHub repo and credential ID
-                git credentialsId: 'GitHub_cred', 
+                git credentialsId: 'Github_cred', 
                     url: 'https://github.com/tirjak/demo-project.git', 
                     branch: 'main' // Change to 'master' if your default branch is master
             }
