@@ -27,10 +27,8 @@ pipeline {
 
         stage('Maven Compile') {
             steps {
-                container('maven') {
-                    echo 'Starting compilation inside EKS agent pod...'
-                    sh 'mvn clean compile'
-                }
+                echo 'Starting compilation...'
+                sh 'mvn clean compile'
             }
         }
     }
