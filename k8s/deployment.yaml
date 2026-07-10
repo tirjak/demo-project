@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-project
+  labels:
+    app: demo-project
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo-project
+  template:
+    metadata:
+      labels:
+        app: demo-project
+    spec:
+      containers:
+        - name: demo-project
+          # This line is updated automatically by the CI pipeline after every
+          # successful main-branch build. Do not edit manually.
+          image: IMAGE_PLACEHOLDER # ci-managed
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            failureThreshold: 3

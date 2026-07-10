@@ -1,0 +1,68 @@
+# ─── Reusable: SonarQube Code Scan ───────────────────────────────────────────
+# Downloads the compiled classes and JaCoCo coverage report produced by the
+# build job, then runs mvn sonar:sonar to analyse the code and publish results
+# to your SonarQube server (self-hosted or SonarCloud).
+#
+# Required GitHub Secrets:
+#   SONAR_TOKEN      – SonarQube user token (My Account → Security → Generate Token)
+#
+# Required GitHub Variables:
+#   SONAR_HOST_URL   – Full URL of your SonarQube server
+#                      e.g. http://your-server:9000  or  https://sonarcloud.io
+# ──────────────────────────────────────────────────────────────────────────────
+name: Reusable – SonarQube Scan
+
+on:
+  workflow_call:
+    inputs:
+      build_artifact_name:
+        description: Name of the build artifact uploaded by the build job
+        type: string
+        required: true
+      sonar_host_url:
+        description: URL of the SonarQube server
+        type: string
+        required: true
+      java_version:
+        description: JDK version (must match the build job)
+        type: string
+        default: '17'
+    secrets:
+      SONAR_TOKEN:
+        required: true
+
+jobs:
+  sonar:
+    name: SonarQube Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so SonarQube can compute blame and new-code metrics.
+          fetch-depth: 0
+
+      - name: Set up JDK ${{ inputs.java_version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ inputs.java_version }}
+          distribution: temurin
+          cache: maven
+
+      - name: Download build artifacts (classes + JaCoCo report)
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.build_artifact_name }}
+          # Restore into target/ so sonar:sonar can find .class files and reports.
+          path: target/
+
+      # sonar:sonar reads compiled classes, test results, and JaCoCo XML from
+      # target/ and ships the analysis to the SonarQube server.
+      - name: Run SonarQube analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          mvn --batch-mode sonar:sonar \
+            -Dsonar.host.url="${{ inputs.sonar_host_url }}" \
+            -Dsonar.token="${SONAR_TOKEN}"

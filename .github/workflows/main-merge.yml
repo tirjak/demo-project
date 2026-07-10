@@ -1,0 +1,92 @@
+# ─── Main Branch CI ───────────────────────────────────────────────────────────
+# Triggered on every push/merge to the main (or master) branch.
+#
+# Pipeline:
+#
+#   ┌──────────┐
+#   │  setup   │
+#   └────┬─────┘
+#        │
+#   ┌────▼─────┐
+#   │  build   │  ← mvn verify (compile + unit tests + JaCoCo coverage)
+#   └────┬─────┘
+#        │
+#   ┌────▼──────────────────┬────────────────────────────────┐
+#   │  sonar                │  docker                        │  ← parallel
+#   │  (SonarQube scan)     │  (build → Trivy scan → ECR)   │
+#   └───────────────────────┴────────────┬───────────────────┘
+#                                        │
+#                              ┌─────────▼──────────┐
+#                              │  update-manifest   │  ← sed + git commit
+#                              └────────────────────┘
+# ──────────────────────────────────────────────────────────────────────────────
+name: Main Branch CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+concurrency:
+  group: main-ci
+  cancel-in-progress: false
+
+jobs:
+  # ── 0. Compute image tag (short SHA) ─────────────────────────────────────
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.value }}
+    steps:
+      - name: Compute Docker image tag
+        id: tag
+        run: |
+          SHORT_SHA="${{ github.sha }}"
+          echo "value=${SHORT_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+  # ── 1. Build & unit tests ─────────────────────────────────────────────────
+  build:
+    name: Build & Unit Tests
+    needs: setup
+    uses: ./.github/workflows/reusable-build.yml
+    with:
+      java_version: '17'
+
+  # ── 2a. SonarQube scan (parallel with docker) ─────────────────────────────
+  sonar:
+    name: SonarQube Scan
+    needs: build
+    uses: ./.github/workflows/reusable-sonar.yml
+    with:
+      build_artifact_name: ${{ needs.build.outputs.build_artifact_name }}
+      sonar_host_url: ${{ vars.SONAR_HOST_URL }}
+      java_version: '17'
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # ── 2b. Docker build → Trivy scan → ECR push (parallel with sonar) ────────
+  docker:
+    name: Docker → Trivy → ECR
+    needs: [setup, build]
+    uses: ./.github/workflows/reusable-docker-ecr.yml
+    with:
+      artifact_name: ${{ needs.build.outputs.artifact_name }}
+      image_tag: ${{ needs.setup.outputs.image_tag }}
+      ecr_registry: ${{ vars.ECR_REGISTRY }}
+      ecr_repository: ${{ vars.ECR_REPOSITORY }}
+      aws_region: ${{ vars.AWS_REGION }}
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+  # ── 3. Update image tag in k8s/deployment.yaml ────────────────────────────
+  update-manifest:
+    name: Update Deployment Manifest
+    needs: docker
+    uses: ./.github/workflows/reusable-update-manifest.yml
+    with:
+      docker_image: ${{ needs.docker.outputs.image_full_name }}
+    permissions:
+      contents: write

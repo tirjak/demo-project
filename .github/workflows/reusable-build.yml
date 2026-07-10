@@ -1,0 +1,77 @@
+# ─── Reusable: Maven Build & Unit Tests ──────────────────────────────────────
+# Compiles the project, runs all unit tests (JaCoCo instruments for coverage),
+# and uploads two artifacts consumed by downstream jobs:
+#   • The fat JAR            → used by the Docker build job
+#   • The full target/ dir   → used by the SonarQube scan job (needs .class
+#                              files and JaCoCo XML for accurate analysis)
+# ──────────────────────────────────────────────────────────────────────────────
+name: Reusable – Build & Unit Tests
+
+on:
+  workflow_call:
+    inputs:
+      java_version:
+        description: JDK version
+        type: string
+        default: '17'
+    outputs:
+      artifact_name:
+        description: Name of the uploaded JAR artifact (pass to Docker job)
+        value: ${{ jobs.build.outputs.artifact_name }}
+      build_artifact_name:
+        description: Name of the full build artifact (pass to SonarQube job)
+        value: ${{ jobs.build.outputs.build_artifact_name }}
+
+jobs:
+  build:
+    name: Build & Unit Tests
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_name:       ${{ steps.names.outputs.jar_name }}
+      build_artifact_name: ${{ steps.names.outputs.build_name }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ inputs.java_version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ inputs.java_version }}
+          distribution: temurin
+          cache: maven
+
+      # mvn verify: compile → unit tests → JaCoCo XML report
+      - name: Build, run unit tests, and generate coverage
+        run: mvn --batch-mode clean verify
+
+      - name: Compute artifact names
+        id: names
+        run: |
+          echo "jar_name=app-jar-${{ github.sha }}"    >> "$GITHUB_OUTPUT"
+          echo "build_name=build-output-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish unit test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results-${{ github.sha }}
+          path: target/surefire-reports/
+          retention-days: 7
+
+      - name: Upload JAR artifact (for Docker job)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.names.outputs.jar_name }}
+          path: target/*.jar
+          retention-days: 7
+
+      - name: Upload full build output (for SonarQube job)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.names.outputs.build_name }}
+          path: |
+            target/classes/
+            target/test-classes/
+            target/surefire-reports/
+            target/site/jacoco/
+          retention-days: 1

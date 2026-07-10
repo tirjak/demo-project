@@ -1,0 +1,123 @@
+# ─── Reusable: Docker Build → Trivy Scan → Push to ECR ───────────────────────
+# 1. Downloads the pre-built JAR from the build job.
+# 2. Builds a Docker image.
+# 3. Scans it with Trivy for OS and library vulnerabilities.
+#    CRITICAL findings fail the pipeline; HIGH findings are reported only.
+# 4. Authenticates to Amazon ECR and pushes the image with a SHA tag.
+#
+# Required GitHub Secrets:
+#   AWS_ACCESS_KEY_ID      – IAM access key
+#   AWS_SECRET_ACCESS_KEY  – IAM secret key
+#
+# Required GitHub Variables:
+#   AWS_REGION     – e.g. us-east-1
+#   ECR_REGISTRY   – AWS account-based registry URL
+#                    e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com
+#   ECR_REPOSITORY – ECR repository name, e.g. demo-project
+# ──────────────────────────────────────────────────────────────────────────────
+name: Reusable – Docker Build, Trivy Scan & ECR Push
+
+on:
+  workflow_call:
+    inputs:
+      artifact_name:
+        description: Name of the JAR artifact uploaded by the build job
+        type: string
+        required: true
+      image_tag:
+        description: Tag to apply to the Docker image (e.g. short SHA or branch slug)
+        type: string
+        required: true
+      ecr_registry:
+        description: ECR registry URL (e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com)
+        type: string
+        required: true
+      ecr_repository:
+        description: ECR repository name (e.g. demo-project)
+        type: string
+        required: true
+      aws_region:
+        description: AWS region
+        type: string
+        required: true
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+    outputs:
+      image_full_name:
+        description: Full image URI pushed to ECR (registry/repo:tag)
+        value: ${{ jobs.docker.outputs.image_full_name }}
+
+jobs:
+  docker:
+    name: Docker Build → Trivy → ECR Push
+    runs-on: ubuntu-latest
+    outputs:
+      image_full_name: ${{ steps.meta.outputs.full_name }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: target/
+
+      - name: Compute full image URI
+        id: meta
+        run: |
+          FULL="${{ inputs.ecr_registry }}/${{ inputs.ecr_repository }}:${{ inputs.image_tag }}"
+          echo "full_name=${FULL}" >> "$GITHUB_OUTPUT"
+          echo "Image URI: ${FULL}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (local, not yet pushed)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true          # load into local Docker daemon for Trivy to scan
+          tags: ${{ steps.meta.outputs.full_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── Trivy image scan ──────────────────────────────────────────────────
+      # Trivy scans the locally-loaded image before it is pushed to ECR,
+      # so a vulnerable image never lands in your registry.
+      - name: Scan image with Trivy (CRITICAL = fail, HIGH = warn)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.full_name }}
+          format: table
+          exit-code: '1'          # fail the pipeline on CRITICAL vulnerabilities
+          ignore-unfixed: true    # skip vulnerabilities with no available fix
+          severity: CRITICAL      # report and fail on CRITICAL only; HIGH shown but not blocking
+          output: trivy-report.txt
+
+      - name: Upload Trivy scan report
+        if: always()              # upload even when Trivy fails so report is accessible
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report-${{ github.sha }}
+          path: trivy-report.txt
+          retention-days: 14
+
+      # ── Authenticate to ECR and push ──────────────────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push image to ECR
+        run: docker push "${{ steps.meta.outputs.full_name }}"

@@ -1,0 +1,67 @@
+# ─── Reusable: Update Image Tag in Deployment Manifest ───────────────────────
+# Replaces the image line in k8s/deployment.yaml with the newly pushed ECR image
+# URI and commits the change back to the repository.
+#
+# The image line in deployment.yaml must end with the comment `# ci-managed`
+# so the sed substitution is scoped exactly to that line:
+#
+#   image: <anything> # ci-managed   ←  this line gets updated
+#
+# The commit message contains [skip ci] so the push does NOT re-trigger the
+# pipeline, preventing an infinite loop.
+#
+# Permissions: the GITHUB_TOKEN needs contents: write (granted below).
+# ──────────────────────────────────────────────────────────────────────────────
+name: Reusable – Update Deployment Manifest
+
+on:
+  workflow_call:
+    inputs:
+      docker_image:
+        description: Full ECR image URI to write into the manifest (registry/repo:tag)
+        type: string
+        required: true
+      manifest_path:
+        description: Relative path to the deployment manifest file
+        type: string
+        default: k8s/deployment.yaml
+
+jobs:
+  update-manifest:
+    name: Update Image Tag in Manifest
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # needed to push the manifest change
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          # Use the default GITHUB_TOKEN to authenticate the push.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update image tag in ${{ inputs.manifest_path }}
+        run: |
+          sed -i \
+            's|image: .* # ci-managed|image: ${{ inputs.docker_image }} # ci-managed|' \
+            "${{ inputs.manifest_path }}"
+
+          echo "=== Updated manifest ==="
+          grep "image:" "${{ inputs.manifest_path }}"
+
+      - name: Commit and push manifest change
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add "${{ inputs.manifest_path }}"
+
+          # Only commit if there is an actual change (idempotent on re-runs
+          # with the same image tag).
+          if git diff --cached --quiet; then
+            echo "Manifest already up to date — nothing to commit."
+          else
+            git commit -m "ci: update image to ${{ inputs.docker_image }} [skip ci]"
+            git push
+          fi
