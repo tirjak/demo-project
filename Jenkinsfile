@@ -2,7 +2,7 @@ pipeline {
     agent {
         kubernetes {
             // Must match the name of the cloud provider in your Jenkins settings
-            cloud 'kubernetes' 
+            cloud 'eks-cluster' 
             namespace 'jenkins'
             defaultContainer 'maven'
             yaml '''
