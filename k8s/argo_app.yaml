@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: semtech-project
+  namespace: argocd # This must be deployed in the namespace where ArgoCD is running
+spec:
+  project: default # Uses the default ArgoCD project access control
+
+  # 1. Source: Where your code lives
+  source:
+    repoURL: 'https://github.com/tirjak/demo-project.git'
+    targetRevision: main
+    path: k8s # ArgoCD will look inside this folder for deployment.yaml
+
+  # 2. Destination: Where to deploy it
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: default # The namespace where your app's resources will land
+
+  # 3. Sync Policy: Automated with Prune and Self-Heal enabled
+  syncPolicy:
+    automated:
+      prune: true      # Automatically deletes resources from K8s if removed from Git
+      selfHeal: true   # Automatically overwrites manual kubectl changes to match Git
+    syncOptions:
+      - CreateNamespace=true # Creates the target namespace if it doesn't exist
