@@ -20,9 +20,9 @@ pipeline {
         stage('Checkout Code') {
             steps {
                 // Using your specific GitHub repo and credential ID
-                git credentialsId: 'Github_cred', 
+                git credentialsId: 'githubid', 
                     url: 'https://github.com/tirjak/demo-project.git', 
-                    branch: 'main' // Change to 'master' if your default branch is master
+                    branch: 'main'
             }
         }
 
@@ -122,7 +122,7 @@ pipeline {
 
         stage('Update Manifest') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'Github_cred',
+                withCredentials([usernamePassword(credentialsId: 'githubid',
                                                   usernameVariable: 'GIT_USER',
                                                   passwordVariable: 'GIT_TOKEN')]) {
                     sh """
