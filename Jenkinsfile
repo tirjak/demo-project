@@ -122,15 +122,16 @@ pipeline {
 
         stage('Update Manifest') {
             steps {
-                sshagent(credentials: ['github_cred']) {
+                withCredentials([usernamePassword(credentialsId: 'GitHub_cred',
+                                                  usernameVariable: 'GIT_USER',
+                                                  passwordVariable: 'GIT_TOKEN')]) {
                     sh """
-                        sed -i '' 's|image: .*|image: ${FULL_IMAGE} |' k8s/deployment.yaml
+                        sed -i '' 's|image: .*# ci-managed|image: ${FULL_IMAGE} # ci-managed|' k8s/deployment.yaml
                         git config user.email "jenkins@demo-project.com"
                         git config user.name "Jenkins CI"
                         git add k8s/deployment.yaml
                         git commit -m "ci: update image tag to ${IMAGE_TAG}"
-                        git remote set-url origin git@github.com:tirjak/demo-project.git
-                        git push origin HEAD:main
+                        git push https://${GIT_USER}:${GIT_TOKEN}@github.com/tirjak/demo-project.git HEAD:main
                     """
                 }
             }
