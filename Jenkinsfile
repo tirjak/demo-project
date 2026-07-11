@@ -126,7 +126,7 @@ pipeline {
                                                   usernameVariable: 'GIT_USER',
                                                   passwordVariable: 'GIT_TOKEN')]) {
                     sh """
-                        sed -i '' 's|image: .*# ci-managed|image: ${FULL_IMAGE} # ci-managed|' k8s/deployment.yaml
+                        sed -i '' 's|image: .* |image: ${FULL_IMAGE} |' k8s/deployment.yaml
                         git config user.email "jenkins@demo-project.com"
                         git config user.name "Jenkins CI"
                         git add k8s/deployment.yaml
