@@ -88,13 +88,10 @@ pipeline {
                     def gitCommit = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     IMAGE_TAG  = "${gitCommit}-${BUILD_NUMBER}"
                     FULL_IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+                    // Build amd64 locally and save as Docker-format tar for Trivy
                     sh """
-                        docker buildx use multiarch-builder 2>/dev/null || \
-                            docker buildx create --use --name multiarch-builder
-                        docker buildx build \
-                            --platform linux/amd64,linux/arm64 \
-                            --output type=oci,dest=image.tar \
-                            -t ${FULL_IMAGE} .
+                        docker build --platform linux/amd64 -t ${FULL_IMAGE} .
+                        docker save ${FULL_IMAGE} -o image.tar
                     """
                 }
             }

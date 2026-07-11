@@ -61,21 +61,24 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       # ── Docker Build ──────────────────────────────────────────────────────
-      # Build both amd64 and arm64, export to local OCI tar so Trivy can
-      # scan the image before it is pushed to ECR.
-      - name: Docker Build (linux/amd64 + linux/arm64)
+      # Build amd64 and load into the local Docker daemon so we can save a
+      # Docker-format tar that Trivy can scan before the image is pushed.
+      - name: Docker Build linux/amd64 (for Trivy scan)
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: false
-          outputs: type=oci,dest=image.tar
+          load: true
           tags: ${{ steps.meta.outputs.full_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Save image as Docker-format tar
+        run: docker save ${{ steps.meta.outputs.full_name }} -o image.tar
+
       # ── Trivy Image Scan ──────────────────────────────────────────────────
-      # Scan the local OCI tar — image has not been pushed to ECR yet.
+      # Scan the Docker-format tar — image has not been pushed to ECR yet.
       - name: Trivy Image Scan (HIGH & CRITICAL)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
