@@ -80,6 +80,34 @@ pipeline {
             }
         }
 
+        stage('Docker Build') {
+            steps {
+                script {
+                    def gitCommit = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                    IMAGE_TAG  = "${gitCommit}-${BUILD_NUMBER}"
+                    FULL_IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+                    sh "docker build -t ${FULL_IMAGE} ."
+                }
+            }
+        }
+
+        stage('Trivy Image Scan') {
+            steps {
+                sh """
+                    /opt/homebrew/bin/trivy image \
+                        --format table \
+                        --severity HIGH,CRITICAL \
+                        --output trivy-report.txt \
+                        ${FULL_IMAGE}
+                """
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+                }
+            }
+        }
+
     }
     
     post {
