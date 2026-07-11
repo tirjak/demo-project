@@ -44,6 +44,19 @@ pipeline {
             }
         }
 
+        stage('Code Coverage') {
+            steps {
+                sh 'mvn jacoco:report'
+            }
+            post {
+                always {
+                    jacoco execPattern: 'target/jacoco.exec',
+                           classPattern: 'target/classes',
+                           sourcePattern: 'src/main/java'
+                }
+            }
+        }
+
         stage('sonarQube Analysis') {
             steps {
                 echo 'Starting SonarQube analysis...'
@@ -52,6 +65,7 @@ pipeline {
                 }
             }
         }
+
     }
     
     post {
