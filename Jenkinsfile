@@ -8,7 +8,7 @@ pipeline {
 
     environment {
         ECR_REGISTRY   = '348165962256.dkr.ecr.us-east-1.amazonaws.com'
-        ECR_REPOSITORY = 'demo-project'
+        ECR_REPOSITORY = 'semtech_demo_image'
         AWS_REGION     = 'us-east-1'
         SONAR_HOST_URL = 'http://localhost:9000'
         IMAGE_TAG      = ''
@@ -29,6 +29,18 @@ pipeline {
             steps {
                 echo 'Starting compilation...'
                 sh 'mvn clean compile'
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                sh 'mvn test'
+            }
+            post {
+                always {
+                    junit testResults: 'target/surefire-reports/*.xml',
+                          allowEmptyResults: true
+                }
             }
         }
 
