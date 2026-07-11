@@ -1,23 +1,3 @@
-# ─── Feature Branch CI ────────────────────────────────────────────────────────
-# Triggered on every push to any feature/* or feat/* branch.
-#
-# Pipeline:
-#
-#   ┌──────────┐
-#   │  setup   │
-#   └────┬─────┘
-#        │
-#   ┌────▼─────┐
-#   │  build   │  ← mvn verify (compile + unit tests + JaCoCo coverage)
-#   └────┬─────┘
-#        │
-#   ┌────▼──────────────────┬────────────────────────────────┐
-#   │  sonar                │  docker                        │  ← parallel
-#   │  (SonarQube scan)     │  (build → Trivy scan → ECR)   │
-#   └───────────────────────┴────────────────────────────────┘
-#
-# No manifest update on feature branches (only main triggers that).
-# ──────────────────────────────────────────────────────────────────────────────
 name: Feature Branch CI
 
 on:
@@ -27,13 +7,14 @@ on:
       - 'feature/*'
       - 'feat/**'
       - 'feat/*'
+  workflow_dispatch:
 
 concurrency:
   group: feature-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ── 0. Compute image tag ──────────────────────────────────────────────────
+  # ── 0. Compute image tag (matches Jenkins: gitCommit-buildNumber) ─────────
   setup:
     name: Setup
     runs-on: ubuntu-latest
@@ -43,13 +24,10 @@ jobs:
       - name: Compute Docker image tag
         id: tag
         run: |
-          BRANCH="${{ github.ref_name }}"
-          SLUG="${BRANCH//\//-}"
-          SLUG="${SLUG//#/-}"
           SHORT_SHA="${{ github.sha }}"
-          echo "value=${SLUG}-${SHORT_SHA:0:7}" >> "$GITHUB_OUTPUT"
+          echo "value=${SHORT_SHA:0:7}-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
-  # ── 1. Build & unit tests ─────────────────────────────────────────────────
+  # ── 1. Build & Unit Tests & Coverage ─────────────────────────────────────
   build:
     name: Build & Unit Tests
     needs: setup
@@ -57,7 +35,7 @@ jobs:
     with:
       java_version: '17'
 
-  # ── 2a. SonarQube scan (parallel with docker) ─────────────────────────────
+  # ── 2a. SonarQube scan (parallel with owasp & docker) ────────────────────
   sonar:
     name: SonarQube Scan
     needs: build
@@ -69,7 +47,15 @@ jobs:
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-  # ── 2b. Docker build → Trivy scan → ECR push (parallel with sonar) ────────
+  # ── 2b. OWASP Dependency Check (parallel with sonar & docker) ────────────
+  owasp:
+    name: OWASP Dependency Check
+    needs: build
+    uses: ./.github/workflows/reusable-owasp.yml
+    secrets:
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
+  # ── 2c. Docker build → Trivy scan → ECR push (parallel with sonar & owasp)
   docker:
     name: Docker → Trivy → ECR
     needs: [setup, build]

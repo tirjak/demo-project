@@ -1,10 +1,3 @@
-# ─── Reusable: Maven Build & Unit Tests ──────────────────────────────────────
-# Compiles the project, runs all unit tests (JaCoCo instruments for coverage),
-# and uploads two artifacts consumed by downstream jobs:
-#   • The fat JAR            → used by the Docker build job
-#   • The full target/ dir   → used by the SonarQube scan job (needs .class
-#                              files and JaCoCo XML for accurate analysis)
-# ──────────────────────────────────────────────────────────────────────────────
 name: Reusable – Build & Unit Tests
 
 on:
@@ -41,22 +34,31 @@ jobs:
           distribution: temurin
           cache: maven
 
-      # mvn verify: compile → unit tests → JaCoCo XML report
-      - name: Build, run unit tests, and generate coverage
-        run: mvn --batch-mode clean verify
+      - name: Maven Compile
+        run: mvn --batch-mode clean compile
 
-      - name: Compute artifact names
-        id: names
-        run: |
-          echo "jar_name=app-jar-${{ github.sha }}"    >> "$GITHUB_OUTPUT"
-          echo "build_name=build-output-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+      - name: Unit Tests
+        run: mvn --batch-mode test
 
       - name: Publish unit test results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: unit-test-results-${{ github.sha }}
           path: target/surefire-reports/
           retention-days: 7
+
+      - name: Code Coverage
+        run: mvn --batch-mode jacoco:report
+
+      - name: Package JAR (for Docker job)
+        run: mvn --batch-mode package -DskipTests
+
+      - name: Compute artifact names
+        id: names
+        run: |
+          echo "jar_name=app-jar-${{ github.sha }}"          >> "$GITHUB_OUTPUT"
+          echo "build_name=build-output-${{ github.sha }}"   >> "$GITHUB_OUTPUT"
 
       - name: Upload JAR artifact (for Docker job)
         uses: actions/upload-artifact@v4
