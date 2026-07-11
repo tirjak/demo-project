@@ -83,6 +83,7 @@ pipeline {
         stage('Docker Build') {
             steps {
                 script {
+                    sh 'mvn package -DskipTests'
                     def gitCommit = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     IMAGE_TAG  = "${gitCommit}-${BUILD_NUMBER}"
                     FULL_IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
@@ -104,6 +105,33 @@ pipeline {
             post {
                 always {
                     archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Push to ECR') {
+            steps {
+                sh """
+                    aws ecr get-login-password --region ${AWS_REGION} | \
+                    docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                    docker push ${FULL_IMAGE}
+                """
+            }
+        }
+
+        stage('Update Manifest') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'Github_cred',
+                                                  usernameVariable: 'GIT_USER',
+                                                  passwordVariable: 'GIT_TOKEN')]) {
+                    sh """
+                        sed -i '' 's|image: .*# ci-managed|image: ${FULL_IMAGE} # ci-managed|' k8s/deployment.yaml
+                        git config user.email "jenkins@demo-project.com"
+                        git config user.name "Jenkins CI"
+                        git add k8s/deployment.yaml
+                        git commit -m "ci: update image tag to ${IMAGE_TAG}"
+                        git push https://${GIT_USER}:${GIT_TOKEN}@github.com/tirjak/demo-project.git HEAD:main
+                    """
                 }
             }
         }
