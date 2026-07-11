@@ -88,7 +88,7 @@ pipeline {
                     def gitCommit = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     IMAGE_TAG  = "${gitCommit}-${BUILD_NUMBER}"
                     FULL_IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
-                    sh "docker build -t ${FULL_IMAGE} ."
+                    sh "docker build --platform linux/amd64 -t ${FULL_IMAGE} ."
                 }
             }
         }
