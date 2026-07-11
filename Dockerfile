@@ -1,10 +1,10 @@
 # ─── Runtime image ────────────────────────────────────────────────────────────
 # The JAR is built by Maven in CI and passed in via the build context (target/).
 # Using a slim JRE image keeps the final image small (~200 MB vs ~600 MB for JDK).
-FROM --platform=linux/amd64 eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre
 
 # Non-root user for security best practice
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 
 WORKDIR /app
 

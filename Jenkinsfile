@@ -88,7 +88,14 @@ pipeline {
                     def gitCommit = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     IMAGE_TAG  = "${gitCommit}-${BUILD_NUMBER}"
                     FULL_IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
-                    sh "docker build --platform linux/amd64 -t ${FULL_IMAGE} ."
+                    sh """
+                        docker buildx use multiarch-builder 2>/dev/null || \
+                            docker buildx create --use --name multiarch-builder
+                        docker buildx build \
+                            --platform linux/amd64,linux/arm64 \
+                            --output type=oci,dest=image.tar \
+                            -t ${FULL_IMAGE} .
+                    """
                 }
             }
         }
@@ -99,8 +106,8 @@ pipeline {
                     trivy image \
                         --format table \
                         --severity HIGH,CRITICAL \
-                        --output trivy-report.txt \
-                        ${FULL_IMAGE}
+                        --input image.tar \
+                        --output trivy-report.txt
                 """
             }
             post {
@@ -114,8 +121,13 @@ pipeline {
             steps {
                 sh """
                     aws ecr get-login-password --region ${AWS_REGION} | \
-                    docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                    docker push ${FULL_IMAGE}
+                        docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                    docker buildx use multiarch-builder 2>/dev/null || \
+                        docker buildx create --use --name multiarch-builder
+                    docker buildx build \
+                        --platform linux/amd64,linux/arm64 \
+                        --push \
+                        -t ${FULL_IMAGE} .
                 """
             }
         }

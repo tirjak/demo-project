@@ -60,21 +60,26 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image (linux/amd64 for EKS)
+      # ── Docker Build ──────────────────────────────────────────────────────
+      # Build both amd64 and arm64, export to local OCI tar so Trivy can
+      # scan the image before it is pushed to ECR.
+      - name: Docker Build (linux/amd64 + linux/arm64)
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: false
-          load: true
+          outputs: type=oci,dest=image.tar
           tags: ${{ steps.meta.outputs.full_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # ── Trivy Image Scan ──────────────────────────────────────────────────
+      # Scan the local OCI tar — image has not been pushed to ECR yet.
       - name: Trivy Image Scan (HIGH & CRITICAL)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ steps.meta.outputs.full_name }}
+          input: image.tar
           format: table
           exit-code: '0'
           severity: HIGH,CRITICAL
@@ -88,6 +93,8 @@ jobs:
           path: trivy-report.txt
           retention-days: 14
 
+      # ── Push to ECR ───────────────────────────────────────────────────────
+      # Push reuses the cached layers from the build step above — very fast.
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -98,5 +105,11 @@ jobs:
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Push image to ECR
-        run: docker push "${{ steps.meta.outputs.full_name }}"
+      - name: Push to ECR (linux/amd64 + linux/arm64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.full_name }}
+          cache-from: type=gha
