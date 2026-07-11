@@ -13,6 +13,7 @@ pipeline {
         SONAR_HOST_URL = 'http://localhost:9000'
         IMAGE_TAG      = ''
         FULL_IMAGE     = ''
+        PATH           = "/opt/homebrew/bin:/Users/tirjakmohapatra/.docker/bin:${env.PATH}"
     }
 
     stages {
@@ -95,7 +96,7 @@ pipeline {
         stage('Trivy Image Scan') {
             steps {
                 sh """
-                    /opt/homebrew/bin/trivy image \
+                    trivy image \
                         --format table \
                         --severity HIGH,CRITICAL \
                         --output trivy-report.txt \
