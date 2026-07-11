@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: demo-project
+  name: semtech-project
   labels:
-    app: demo-project
+    app: semtech-project
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: demo-project
+      app: semtech-project
   template:
     metadata:
       labels:
-        app: demo-project
+        app: semtech-project
     spec:
       containers:
-        - name: demo-project
+        - name: semtech-project
           # This line is updated automatically by the CI pipeline after every
-          # successful main-branch build. Do not edit manually.
+          # Do not edit manually.
           image: 348165962256.dkr.ecr.us-east-1.amazonaws.com/semtech_demo_image:4d9f3a8-25
           ports:
             - containerPort: 8080
@@ -42,3 +42,20 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 5
             failureThreshold: 3
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: semtech-service
+  labels:
+    app: semtech-project
+spec:
+  type: ClusterIP
+  selector:
+    app: semtech-project
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80           # external port (browser-facing, no :port needed)
+      targetPort: 8080   # Spring Boot app port inside the container
