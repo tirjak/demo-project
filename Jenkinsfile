@@ -18,7 +18,8 @@ spec:
       privileged: true
   containers:
   - name: build
-    image: 348165962256.dkr.ecr.us-east-1.amazonaws.com/jenkins-agent:latest
+    image: jenkins-agent:latest
+    imagePullPolicy: Never
     command: [cat]
     tty: true
     env:
@@ -53,7 +54,7 @@ spec:
         ECR_REGISTRY   = '348165962256.dkr.ecr.us-east-1.amazonaws.com'
         ECR_REPOSITORY = 'semtech_demo_image'
         AWS_REGION     = 'us-east-1'
-        SONAR_HOST_URL = 'http://localhost:9000'
+        SONAR_HOST_URL = 'https://budget-trident-freckles.ngrok-free.dev'
         IMAGE_TAG      = ''
         FULL_IMAGE     = ''
     }
