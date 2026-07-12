@@ -1,10 +1,19 @@
 pipeline {
-    agent any
-
-    tools {
-        jdk   'jdk_mac'
-        maven 'maven_3.9'
+    // Run every build inside the CI Docker image.
+    // JDK 17, Maven 3.9, Docker CLI, AWS CLI, and Trivy are all baked in.
+    // Build the image once before using: docker build -t demo-project-ci:latest -f Dockerfile.ci .
+    agent {
+        docker {
+            image 'demo-project-ci:latest'
+            // Share the host Docker daemon so docker build/push work inside the container
+            args  '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
     }
+
+    // Webhook triggers are configured at the Multibranch Pipeline job level
+    // (GitHub Branch Source plugin → "push" + "pull_request" events).
+    // Jenkins automatically sets env.BRANCH_NAME for branch builds
+    // and env.CHANGE_ID / env.CHANGE_BRANCH for PR builds.
 
     environment {
         ECR_REGISTRY   = '348165962256.dkr.ecr.us-east-1.amazonaws.com'
@@ -13,7 +22,6 @@ pipeline {
         SONAR_HOST_URL = 'http://localhost:9000'
         IMAGE_TAG      = ''
         FULL_IMAGE     = ''
-        PATH           = "/opt/homebrew/bin:/Users/tirjakmohapatra/.docker/bin:${env.PATH}"
     }
 
     stages {
@@ -84,7 +92,9 @@ pipeline {
                 script {
                     sh 'mvn package -DskipTests'
                     def gitCommit = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                    def branchPrefix = (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master') ? 'main' : 'feature'
+                    // BRANCH_NAME = 'main' for direct pushes, 'PR-N' for pull requests
+                    def isMain     = (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master')
+                    def branchPrefix = isMain ? 'main' : 'feature'
                     IMAGE_TAG  = "${branchPrefix}-${gitCommit}-${BUILD_NUMBER}"
                     FULL_IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
                     // Build amd64 locally and save as Docker-format tar for Trivy
@@ -134,7 +144,7 @@ pipeline {
                                                   usernameVariable: 'GIT_USER',
                                                   passwordVariable: 'GIT_TOKEN')]) {
                     sh """
-                        sed -i '' "s|image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:.*|image: ${FULL_IMAGE}|" k8s/deployment.yaml
+                        sed -i "s|image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:.*|image: ${FULL_IMAGE}|" k8s/deployment.yaml
                         git config user.email "jenkins@demo-project.com"
                         git config user.name "Jenkins CI"
                         git add k8s/deployment.yaml
