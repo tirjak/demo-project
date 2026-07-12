@@ -6,26 +6,6 @@ pipeline {
         maven 'maven_3.9'
     }
 
-    // ── Webhook trigger ───────────────────────────────────────────────────────
-    // Requires the "Generic Webhook Trigger" Jenkins plugin.
-    // GitHub webhook URL: http://<JENKINS_URL>/generic-webhook-trigger/invoke?token=demo-project-webhook
-    // Events to send: "Just the push event"
-    triggers {
-        GenericTrigger(
-            genericVariables: [
-                [key: 'ref',      value: '$.ref'],
-                [key: 'repo_url', value: '$.repository.clone_url']
-            ],
-            token:       'demo-project-webhook',
-            causeString: 'GitHub push to $ref',
-            // Only trigger for main/master and feature/* or feat/* branches
-            regexpFilterText:       '$ref',
-            regexpFilterExpression: '^refs/heads/(main|master|feature/.+|feat/.+)$',
-            printContributedVariables: true,
-            printPostContent: false
-        )
-    }
-
     environment {
         ECR_REGISTRY   = '348165962256.dkr.ecr.us-east-1.amazonaws.com'
         ECR_REPOSITORY = 'semtech_demo_image'
@@ -34,33 +14,13 @@ pipeline {
         IMAGE_TAG      = ''
         FULL_IMAGE     = ''
         PATH           = "/opt/homebrew/bin:/Users/tirjakmohapatra/.docker/bin:${env.PATH}"
-        // Populated in the Initialize stage from the webhook 'ref' payload
-        TARGET_BRANCH  = ''
-        IS_MAIN        = 'false'
     }
 
     stages {
-        // ── 0. Resolve branch from webhook payload ────────────────────────────
-        stage('Initialize') {
-            steps {
-                script {
-                    // env.ref comes from the Generic Webhook Trigger variable extraction
-                    // e.g. "refs/heads/feature/auth" → "feature/auth"
-                    def rawRef = env.ref ?: 'refs/heads/main'
-                    env.TARGET_BRANCH = rawRef.replace('refs/heads/', '')
-                    env.IS_MAIN = (env.TARGET_BRANCH == 'main' || env.TARGET_BRANCH == 'master') ? 'true' : 'false'
-                    echo "Triggered branch : ${env.TARGET_BRANCH}"
-                    echo "Is main branch   : ${env.IS_MAIN}"
-                }
-            }
-        }
-
         stage('Checkout Code') {
             steps {
-                // Checkout the branch that was actually pushed
-                git credentialsId: 'GitHub_cred', 
-                    url: 'https://github.com/tirjak/demo-project.git', 
-                    branch: env.TARGET_BRANCH
+                // Multibranch Pipeline: checkout scm checks out the branch Jenkins discovered
+                checkout scm
             }
         }
 
@@ -124,7 +84,7 @@ pipeline {
                 script {
                     sh 'mvn package -DskipTests'
                     def gitCommit = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                    def branchPrefix = (env.IS_MAIN == 'true') ? 'main' : 'feature'
+                    def branchPrefix = (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master') ? 'main' : 'feature'
                     IMAGE_TAG  = "${branchPrefix}-${gitCommit}-${BUILD_NUMBER}"
                     FULL_IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
                     // Build amd64 locally and save as Docker-format tar for Trivy
@@ -179,7 +139,7 @@ pipeline {
                         git config user.name "Jenkins CI"
                         git add k8s/deployment.yaml
                         git commit -m "ci: update image tag to ${IMAGE_TAG}"
-                        git push https://${GIT_USER}:${GIT_TOKEN}@github.com/tirjak/demo-project.git HEAD:main
+                        git push https://${GIT_USER}:${GIT_TOKEN}@github.com/tirjak/demo-project.git HEAD:${BRANCH_NAME}
                     """
                 }
             }
