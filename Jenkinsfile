@@ -6,6 +6,26 @@ pipeline {
         maven 'maven_3.9'
     }
 
+    // ── Webhook trigger ───────────────────────────────────────────────────────
+    // Requires the "Generic Webhook Trigger" Jenkins plugin.
+    // GitHub webhook URL: http://<JENKINS_URL>/generic-webhook-trigger/invoke?token=demo-project-webhook
+    // Events to send: "Just the push event"
+    triggers {
+        GenericTrigger(
+            genericVariables: [
+                [key: 'ref',      value: '$.ref'],
+                [key: 'repo_url', value: '$.repository.clone_url']
+            ],
+            token:       'demo-project-webhook',
+            causeString: 'GitHub push to $ref',
+            // Only trigger for main/master and feature/* or feat/* branches
+            regexpFilterText:       '$ref',
+            regexpFilterExpression: '^refs/heads/(main|master|feature/.+|feat/.+)$',
+            printContributedVariables: true,
+            printPostContent: false
+        )
+    }
+
     environment {
         ECR_REGISTRY   = '348165962256.dkr.ecr.us-east-1.amazonaws.com'
         ECR_REPOSITORY = 'semtech_demo_image'
@@ -14,15 +34,33 @@ pipeline {
         IMAGE_TAG      = ''
         FULL_IMAGE     = ''
         PATH           = "/opt/homebrew/bin:/Users/tirjakmohapatra/.docker/bin:${env.PATH}"
+        // Populated in the Initialize stage from the webhook 'ref' payload
+        TARGET_BRANCH  = ''
+        IS_MAIN        = 'false'
     }
 
     stages {
+        // ── 0. Resolve branch from webhook payload ────────────────────────────
+        stage('Initialize') {
+            steps {
+                script {
+                    // env.ref comes from the Generic Webhook Trigger variable extraction
+                    // e.g. "refs/heads/feature/auth" → "feature/auth"
+                    def rawRef = env.ref ?: 'refs/heads/main'
+                    env.TARGET_BRANCH = rawRef.replace('refs/heads/', '')
+                    env.IS_MAIN = (env.TARGET_BRANCH == 'main' || env.TARGET_BRANCH == 'master') ? 'true' : 'false'
+                    echo "Triggered branch : ${env.TARGET_BRANCH}"
+                    echo "Is main branch   : ${env.IS_MAIN}"
+                }
+            }
+        }
+
         stage('Checkout Code') {
             steps {
-                // Using your specific GitHub repo and credential ID
+                // Checkout the branch that was actually pushed
                 git credentialsId: 'githubid', 
                     url: 'https://github.com/tirjak/demo-project.git', 
-                    branch: 'main'
+                    branch: env.TARGET_BRANCH
             }
         }
 
