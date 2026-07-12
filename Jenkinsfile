@@ -58,7 +58,7 @@ pipeline {
         stage('Checkout Code') {
             steps {
                 // Checkout the branch that was actually pushed
-                git credentialsId: 'githubid', 
+                git credentialsId: 'GitHub_cred', 
                     url: 'https://github.com/tirjak/demo-project.git', 
                     branch: env.TARGET_BRANCH
             }
