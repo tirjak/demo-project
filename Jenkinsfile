@@ -160,17 +160,37 @@ spec:
 
         stage('Trivy Image Scan') {
             steps {
-                sh """
+                sh 'curl -sO https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl'
+                // sh '''
+                //     mkdir -p trivy-reports
+                //     trivy image \
+                //         --exit-code 1 \
+                //         --format template \
+                //         --template "@html.tpl" \
+                //         --severity HIGH,CRITICAL \
+                //         --input image.tar \
+                //         --output trivy-reports/security-dashboard.html
+                // '''
+                sh '''
+                    mkdir -p trivy-reports
                     trivy image \
-                        --format table \
+                        --format template \
+                        --template "@html.tpl" \
                         --severity HIGH,CRITICAL \
                         --input image.tar \
-                        --output trivy-report.txt
-                """
+                        --output trivy-reports/security-dashboard.html
+                '''
             }
             post {
                 always {
-                    archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+                    publishHTML([
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'trivy-reports',
+                        reportFiles: 'security-dashboard.html',
+                        reportName: 'Trivy Security Dashboard'
+                    ])
                 }
             }
         }
