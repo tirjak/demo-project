@@ -1,12 +1,46 @@
 pipeline {
-    // Run every build inside the CI Docker image.
-    // JDK 17, Maven 3.9, Docker CLI, AWS CLI, and Trivy are all baked in.
-    // Build the image once before using: docker build -t demo-project-ci:latest -f Dockerfile.ci .
+    // Each build runs inside a fresh EKS pod with two containers:
+    //   build — CI image (JDK 17, Maven, Docker CLI, AWS CLI, Trivy)
+    //   dind  — Docker-in-Docker daemon (EKS nodes use containerd; no host socket available)
+    // Docker CLI in 'build' talks to the DinD daemon via tcp://localhost:2375
     agent {
-        docker {
-            image 'demo-project-ci:latest'
-            // Share the host Docker daemon so docker build/push work inside the container
-            args  '-v /var/run/docker.sock:/var/run/docker.sock'
+        kubernetes {
+            cloud 'minikube'
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  initContainers:
+  - name: qemu-install
+    image: tonistiigi/binfmt:latest
+    args: ["--install", "all"]
+    securityContext:
+      privileged: true
+  containers:
+  - name: build
+    image: 348165962256.dkr.ecr.us-east-1.amazonaws.com/jenkins-agent:latest
+    command: [cat]
+    tty: true
+    env:
+    - name: DOCKER_HOST
+      value: tcp://localhost:2375
+    - name: DOCKER_TLS_VERIFY
+      value: ""
+  - name: dind
+    image: docker:dind
+    securityContext:
+      privileged: true
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""
+    volumeMounts:
+    - name: docker-storage
+      mountPath: /var/lib/docker
+  volumes:
+  - name: docker-storage
+    emptyDir: {}
+'''
+            defaultContainer 'build'
         }
     }
 
@@ -90,17 +124,19 @@ pipeline {
         stage('Docker Build') {
             steps {
                 script {
+                    // Wait for the DinD sidecar daemon to be ready
+                    sh 'until docker info > /dev/null 2>&1; do echo "Waiting for DinD..."; sleep 2; done'
                     sh 'mvn package -DskipTests'
                     def gitCommit = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     // Sanitize branch name for Docker tag: replace '/' with '-'
                     // e.g. feature/auth → feature-auth, PR-1 → PR-1, main → main
                     def sanitizedBranch = env.BRANCH_NAME.replaceAll('/', '-')
-                    IMAGE_TAG  = "${sanitizedBranch}-${gitCommit}-${BUILD_NUMBER}"
-                    FULL_IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
-                    // Build amd64 locally and save as Docker-format tar for Trivy
+                    env.IMAGE_TAG  = "${sanitizedBranch}-${gitCommit}-${BUILD_NUMBER}"
+                    env.FULL_IMAGE = "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:${env.IMAGE_TAG}"
+                    // Build for amd64 inside the EKS pod and save as tar for Trivy
                     sh """
-                        docker build --platform linux/amd64 -t ${FULL_IMAGE} .
-                        docker save ${FULL_IMAGE} -o image.tar
+                        docker build --platform linux/amd64 -t ${env.FULL_IMAGE} .
+                        docker save ${env.FULL_IMAGE} -o image.tar
                     """
                 }
             }
@@ -160,6 +196,9 @@ pipeline {
     post {
         always {
             echo 'Pipeline finished.'
+        }
+        failure {
+            echo "Pipeline FAILED — branch: ${env.BRANCH_NAME}, build: #${env.BUILD_NUMBER}"
         }
     }
 }
