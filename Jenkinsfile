@@ -161,7 +161,19 @@ spec:
         stage('Trivy Image Scan') {
             steps {
                 sh 'curl -sO https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl'
-                sh 'trivy image --exit-code 1 --format template --template "@html.tpl" --severity HIGH,CRITICAL --input image.tar --output security-dashboard.html'
+                // Write report into its own subdirectory so publishHTML only
+                // copies that folder — avoids transferring image.tar (~138 MB)
+                // which causes the Jenkins tar stream to fail mid-transfer.
+                sh '''
+                    mkdir -p trivy-reports
+                    trivy image \
+                        --exit-code 1 \
+                        --format template \
+                        --template "@html.tpl" \
+                        --severity HIGH,CRITICAL \
+                        --input image.tar \
+                        --output trivy-reports/security-dashboard.html
+                '''
             }
             post {
                 always {
@@ -169,7 +181,7 @@ spec:
                         allowMissing: false,
                         alwaysLinkToLastBuild: true,
                         keepAll: true,
-                        reportDir: '.',
+                        reportDir: 'trivy-reports',
                         reportFiles: 'security-dashboard.html',
                         reportName: 'Trivy Security Dashboard'
                     ])
