@@ -1,3 +1,10 @@
+// Pipeline-level Groovy variables — the only reliable way to share
+// computed values (image tag, full ECR path) across stages in a
+// Declarative Pipeline. Closure variables are serializable Strings
+// and do not suffer from the env.X cross-stage propagation issue.
+def IMAGE_TAG  = ''
+def FULL_IMAGE = ''
+
 pipeline {
     // Each build runs inside a fresh EKS pod with two containers:
     //   build — CI image (JDK 17, Maven, Docker CLI, AWS CLI, Trivy)
@@ -62,8 +69,6 @@ spec:
         ECR_REPOSITORY = 'semtech_demo_image'
         AWS_REGION     = 'us-east-1'
         SONAR_HOST_URL = 'https://budget-trident-freckles.ngrok-free.dev'
-        IMAGE_TAG      = ''
-        FULL_IMAGE     = ''
     }
 
     stages {
@@ -139,18 +144,15 @@ spec:
                     // Sanitize branch name for Docker tag: replace '/' with '-'
                     // e.g. feature/auth → feature-auth, PR-1 → PR-1, main → main
                     def sanitizedBranch = env.BRANCH_NAME.replaceAll('/', '-')
-                    // Use local variables for interpolation — env vars set dynamically
-                    // in the same script block are not reliably readable back via env.X
-                    def imageTag  = "${sanitizedBranch}-${gitCommit}-${env.BUILD_NUMBER}"
-                    def fullImage = "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:${imageTag}"
-                    // Persist for later stages
-                    env.IMAGE_TAG  = imageTag
-                    env.FULL_IMAGE = fullImage
-                    echo "Building image: ${fullImage}"
+                    // Assign pipeline-level closure variables (not env.*) so they
+                    // are reliably available in all subsequent stages
+                    IMAGE_TAG  = "${sanitizedBranch}-${gitCommit}-${env.BUILD_NUMBER}"
+                    FULL_IMAGE = "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:${IMAGE_TAG}"
+                    echo "Building image: ${FULL_IMAGE}"
                     // Build for amd64 inside the EKS pod and save as tar for Trivy
                     sh """
-                        docker build --platform linux/amd64 -t ${fullImage} .
-                        docker save ${fullImage} -o image.tar
+                        docker build --platform linux/amd64 -t ${FULL_IMAGE} .
+                        docker save ${FULL_IMAGE} -o image.tar
                     """
                 }
             }
@@ -183,7 +185,7 @@ spec:
                     docker buildx build \
                         --platform linux/amd64,linux/arm64 \
                         --push \
-                        -t ${env.FULL_IMAGE} .
+                        -t ${FULL_IMAGE} .
                 """
             }
         }
@@ -194,11 +196,11 @@ spec:
                                                   usernameVariable: 'GIT_USER',
                                                   passwordVariable: 'GIT_TOKEN')]) {
                     sh """
-                        sed -i "s|image: ${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:.*|image: ${env.FULL_IMAGE}|" k8s/deployment.yaml
+                        sed -i "s|image: ${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:.*|image: ${FULL_IMAGE}|" k8s/deployment.yaml
                         git config user.email "jenkins@demo-project.com"
                         git config user.name "Jenkins CI"
                         git add k8s/deployment.yaml
-                        git commit -m "ci: update image tag to ${env.IMAGE_TAG}"
+                        git commit -m "ci: update image tag to ${IMAGE_TAG}"
                         git push https://\${GIT_USER}:\${GIT_TOKEN}@github.com/tirjak/demo-project.git HEAD:${env.BRANCH_NAME}
                     """
                 }
