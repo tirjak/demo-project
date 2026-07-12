@@ -139,12 +139,18 @@ spec:
                     // Sanitize branch name for Docker tag: replace '/' with '-'
                     // e.g. feature/auth → feature-auth, PR-1 → PR-1, main → main
                     def sanitizedBranch = env.BRANCH_NAME.replaceAll('/', '-')
-                    env.IMAGE_TAG  = "${sanitizedBranch}-${gitCommit}-${BUILD_NUMBER}"
-                    env.FULL_IMAGE = "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:${env.IMAGE_TAG}"
+                    // Use local variables for interpolation — env vars set dynamically
+                    // in the same script block are not reliably readable back via env.X
+                    def imageTag  = "${sanitizedBranch}-${gitCommit}-${env.BUILD_NUMBER}"
+                    def fullImage = "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:${imageTag}"
+                    // Persist for later stages
+                    env.IMAGE_TAG  = imageTag
+                    env.FULL_IMAGE = fullImage
+                    echo "Building image: ${fullImage}"
                     // Build for amd64 inside the EKS pod and save as tar for Trivy
                     sh """
-                        docker build --platform linux/amd64 -t ${env.FULL_IMAGE} .
-                        docker save ${env.FULL_IMAGE} -o image.tar
+                        docker build --platform linux/amd64 -t ${fullImage} .
+                        docker save ${fullImage} -o image.tar
                     """
                 }
             }
@@ -170,14 +176,14 @@ spec:
         stage('Push to ECR') {
             steps {
                 sh """
-                    aws ecr get-login-password --region ${AWS_REGION} | \
-                        docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                    aws ecr get-login-password --region ${env.AWS_REGION} | \
+                        docker login --username AWS --password-stdin ${env.ECR_REGISTRY}
                     docker buildx use multiarch-builder 2>/dev/null || \
                         docker buildx create --use --name multiarch-builder
                     docker buildx build \
                         --platform linux/amd64,linux/arm64 \
                         --push \
-                        -t ${FULL_IMAGE} .
+                        -t ${env.FULL_IMAGE} .
                 """
             }
         }
@@ -188,12 +194,12 @@ spec:
                                                   usernameVariable: 'GIT_USER',
                                                   passwordVariable: 'GIT_TOKEN')]) {
                     sh """
-                        sed -i "s|image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:.*|image: ${FULL_IMAGE}|" k8s/deployment.yaml
+                        sed -i "s|image: ${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:.*|image: ${env.FULL_IMAGE}|" k8s/deployment.yaml
                         git config user.email "jenkins@demo-project.com"
                         git config user.name "Jenkins CI"
                         git add k8s/deployment.yaml
-                        git commit -m "ci: update image tag to ${IMAGE_TAG}"
-                        git push https://${GIT_USER}:${GIT_TOKEN}@github.com/tirjak/demo-project.git HEAD:${BRANCH_NAME}
+                        git commit -m "ci: update image tag to ${env.IMAGE_TAG}"
+                        git push https://\${GIT_USER}:\${GIT_TOKEN}@github.com/tirjak/demo-project.git HEAD:${env.BRANCH_NAME}
                     """
                 }
             }
