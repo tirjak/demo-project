@@ -172,7 +172,7 @@ spec:
                         reportDir: '.',
                         reportFiles: 'security-dashboard.html',
                         reportName: 'Trivy Security Dashboard'
-            ])
+                    ])
                 }
             }
         }
