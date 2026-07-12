@@ -4,3 +4,9 @@ target/
 *.war
 *.ear
 .DS_Store
+
+# TLS certificates and private keys — never commit these
+*.pfx
+*.p12
+*.pem
+*.key

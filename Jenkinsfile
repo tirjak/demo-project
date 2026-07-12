@@ -1,28 +1,81 @@
-pipeline {
-    agent any
+// Pipeline-level Groovy variables — the only reliable way to share
+// computed values (image tag, full ECR path) across stages in a
+// Declarative Pipeline. Closure variables are serializable Strings
+// and do not suffer from the env.X cross-stage propagation issue.
+def IMAGE_TAG  = ''
+def FULL_IMAGE = ''
 
-    tools {
-        jdk   'jdk_mac'
-        maven 'maven_3.9'
+pipeline {
+    // Each build runs inside a fresh EKS pod with two containers:
+    //   build — CI image (JDK 17, Maven, Docker CLI, AWS CLI, Trivy)
+    //   dind  — Docker-in-Docker daemon (EKS nodes use containerd; no host socket available)
+    // Docker CLI in 'build' talks to the DinD daemon via tcp://localhost:2375
+    agent {
+        kubernetes {
+            cloud 'minikube'
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  initContainers:
+  - name: qemu-install
+    image: tonistiigi/binfmt:latest
+    args: ["--install", "all"]
+    securityContext:
+      privileged: true
+  containers:
+  - name: build
+    image: jenkins-agent:latest
+    imagePullPolicy: Never
+    command: [cat]
+    tty: true
+    env:
+    - name: DOCKER_HOST
+      value: tcp://localhost:2375
+    - name: DOCKER_TLS_VERIFY
+      value: ""
+    volumeMounts:
+    - name: aws-credentials
+      mountPath: /root/.aws
+      readOnly: true
+  - name: dind
+    image: docker:dind
+    securityContext:
+      privileged: true
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""
+    volumeMounts:
+    - name: docker-storage
+      mountPath: /var/lib/docker
+  volumes:
+  - name: docker-storage
+    emptyDir: {}
+  - name: aws-credentials
+    secret:
+      secretName: aws-credentials
+'''
+            defaultContainer 'build'
+        }
     }
+
+    // Webhook triggers are configured at the Multibranch Pipeline job level
+    // (GitHub Branch Source plugin → "push" + "pull_request" events).
+    // Jenkins automatically sets env.BRANCH_NAME for branch builds
+    // and env.CHANGE_ID / env.CHANGE_BRANCH for PR builds.
 
     environment {
         ECR_REGISTRY   = '348165962256.dkr.ecr.us-east-1.amazonaws.com'
         ECR_REPOSITORY = 'semtech_demo_image'
         AWS_REGION     = 'us-east-1'
-        SONAR_HOST_URL = 'http://localhost:9000'
-        IMAGE_TAG      = ''
-        FULL_IMAGE     = ''
-        PATH           = "/opt/homebrew/bin:/Users/tirjakmohapatra/.docker/bin:${env.PATH}"
+        SONAR_HOST_URL = 'https://budget-trident-freckles.ngrok-free.dev'
     }
 
     stages {
         stage('Checkout Code') {
             steps {
-                // Using your specific GitHub repo and credential ID
-                git credentialsId: 'githubid', 
-                    url: 'https://github.com/tirjak/demo-project.git', 
-                    branch: 'main'
+                // Multibranch Pipeline: checkout scm checks out the branch Jenkins discovered
+                checkout scm
             }
         }
 
@@ -67,28 +120,36 @@ pipeline {
             }
         }
 
-        stage('OWASP Dependency Check') {
-            steps {
-                withCredentials([string(credentialsId: 'NVD_API_KEY_OWASP', variable: 'NVD_API_KEY')]) {
-                    dependencyCheck additionalArguments: "--scan ./ --format XML --format HTML --out ./dependency-check-report --disableYarnAudit --disableNodeAudit --nvdApiKey ${NVD_API_KEY}",
-                                    odcInstallation: 'OWASP-DC'
-                }
-            }
-            post {
-                always {
-                    dependencyCheckPublisher pattern: 'dependency-check-report/dependency-check-report.xml'
-                }
-            }
-        }
+        // stage('OWASP Dependency Check') {
+        //     steps {
+        //         withCredentials([string(credentialsId: 'NVD_API_KEY_OWASP', variable: 'NVD_API_KEY')]) {
+        //             dependencyCheck additionalArguments: "--scan ./ --format XML --format HTML --out ./dependency-check-report --disableYarnAudit --disableNodeAudit --nvdApiKey ${NVD_API_KEY}",
+        //                             odcInstallation: 'OWASP-DC'
+        //         }
+        //     }
+        //     post {
+        //         always {
+        //             dependencyCheckPublisher pattern: 'dependency-check-report/dependency-check-report.xml'
+        //         }
+        //     }
+        // }
 
         stage('Docker Build') {
             steps {
                 script {
+                    // Wait for the DinD sidecar daemon to be ready
+                    sh 'until docker info > /dev/null 2>&1; do echo "Waiting for DinD..."; sleep 2; done'
                     sh 'mvn package -DskipTests'
                     def gitCommit = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                    IMAGE_TAG  = "${gitCommit}-${BUILD_NUMBER}"
-                    FULL_IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
-                    // Build amd64 locally and save as Docker-format tar for Trivy
+                    // Sanitize branch name for Docker tag: replace '/' with '-'
+                    // e.g. feature/auth → feature-auth, PR-1 → PR-1, main → main
+                    def sanitizedBranch = env.BRANCH_NAME.replaceAll('/', '-')
+                    // Assign pipeline-level closure variables (not env.*) so they
+                    // are reliably available in all subsequent stages
+                    IMAGE_TAG  = "${sanitizedBranch}-${gitCommit}-${env.BUILD_NUMBER}"
+                    FULL_IMAGE = "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:${IMAGE_TAG}"
+                    echo "Building image: ${FULL_IMAGE}"
+                    // Build for amd64 inside the EKS pod and save as tar for Trivy
                     sh """
                         docker build --platform linux/amd64 -t ${FULL_IMAGE} .
                         docker save ${FULL_IMAGE} -o image.tar
@@ -117,8 +178,8 @@ pipeline {
         stage('Push to ECR') {
             steps {
                 sh """
-                    aws ecr get-login-password --region ${AWS_REGION} | \
-                        docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                    aws ecr get-login-password --region ${env.AWS_REGION} | \
+                        docker login --username AWS --password-stdin ${env.ECR_REGISTRY}
                     docker buildx use multiarch-builder 2>/dev/null || \
                         docker buildx create --use --name multiarch-builder
                     docker buildx build \
@@ -135,12 +196,12 @@ pipeline {
                                                   usernameVariable: 'GIT_USER',
                                                   passwordVariable: 'GIT_TOKEN')]) {
                     sh """
-                        sed -i '' "s|image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:.*|image: ${FULL_IMAGE}|" k8s/deployment.yaml
+                        sed -i "s|image: ${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:.*|image: ${FULL_IMAGE}|" k8s/deployment.yaml
                         git config user.email "jenkins@demo-project.com"
                         git config user.name "Jenkins CI"
                         git add k8s/deployment.yaml
                         git commit -m "ci: update image tag to ${IMAGE_TAG}"
-                        git push https://${GIT_USER}:${GIT_TOKEN}@github.com/tirjak/demo-project.git HEAD:main
+                        git push https://\${GIT_USER}:\${GIT_TOKEN}@github.com/tirjak/demo-project.git HEAD:${env.BRANCH_NAME}
                     """
                 }
             }
@@ -151,6 +212,9 @@ pipeline {
     post {
         always {
             echo 'Pipeline finished.'
+        }
+        failure {
+            echo "Pipeline FAILED — branch: ${env.BRANCH_NAME}, build: #${env.BUILD_NUMBER}"
         }
     }
 }

@@ -1,0 +1,30 @@
+# CI agent image used by Jenkins Docker agent.
+# Contains: JDK 17, Maven 3.9, Docker CLI, docker buildx, AWS CLI v2, Trivy.
+FROM maven:3.9-eclipse-temurin-17
+
+# Install prerequisites
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl unzip gnupg lsb-release \
+    # ── Docker CE CLI + buildx plugin ────────────────────────────────────────
+    && install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+       | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+       https://download.docker.com/linux/ubuntu \
+       $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+       | tee /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends docker-ce-cli docker-buildx-plugin \
+    # ── AWS CLI v2 ────────────────────────────────────────────────────────────
+    && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" \
+       -o /tmp/awscliv2.zip \
+    && unzip -q /tmp/awscliv2.zip -d /tmp \
+    && /tmp/aws/install \
+    # ── Trivy ─────────────────────────────────────────────────────────────────
+    && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+       | sh -s -- -b /usr/local/bin \
+    # ── Git safe.directory (fixes "dubious ownership" when jnlp and build
+    #    containers run as different UIDs sharing the same workspace volume) ──
+    && git config --system --add safe.directory '*' \
+    # ── Cleanup ───────────────────────────────────────────────────────────────
+    && rm -rf /var/lib/apt/lists/* /tmp/awscliv2.zip /tmp/aws
