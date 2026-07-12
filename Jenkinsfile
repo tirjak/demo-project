@@ -7,7 +7,7 @@ pipeline {
     agent {
         kubernetes {
             cloud 'minikube'
-            label 'multiarch-pod-semtech' // Matches the Pod Template label set in Jenkins Cloud UI
+            inheritFrom 'multiarch-pod-semtech' // Matches the Pod Template label set in Jenkins Cloud UI
             defaultContainer 'build'
         }
     }
