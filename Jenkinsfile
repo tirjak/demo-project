@@ -20,7 +20,6 @@ pipeline {
     stages {
         stage('Checkout Code') {
             steps {
-                // Multibranch Pipeline: checkout scm checks out the branch Jenkins discovered
                 checkout scm
             }
         }
