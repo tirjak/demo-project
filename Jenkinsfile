@@ -1,3 +1,5 @@
+// Pipeline-level Groovy variables — used to share computed values 
+// (image tag, full ECR path) reliably across stages.
 def IMAGE_TAG  = ''
 def FULL_IMAGE = ''
 
@@ -118,6 +120,37 @@ pipeline {
         stage('Push to ECR') {
             steps {
                 sh """
-                    aws ecr get-login-password --region ${env.AWS_REGION} | \
-                        docker login --username AWS --password-stdin ${env.ECR_REGISTRY}
-                    docker buildx use multiarch
+                    aws ecr get-login-password --region ${env.AWS_REGION} | docker login --username AWS --password-stdin ${env.ECR_REGISTRY}
+                    docker buildx use multiarch-builder 2>/dev/null || docker buildx create --use --name multiarch-builder
+                    docker buildx build --platform linux/amd64,linux/arm64 --push -t ${FULL_IMAGE} .
+                """
+            }
+        }
+
+        stage('Update Manifest') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'GitHub_cred',
+                                                  usernameVariable: 'GIT_USER',
+                                                  passwordVariable: 'GIT_TOKEN')]) {
+                    sh """
+                        sed -i "s|image: ${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:.*|image: ${FULL_IMAGE}|" k8s/deployment.yaml
+                        git config user.email "jenkins@demo-project.com"
+                        git config user.name "Jenkins CI"
+                        git add k8s/deployment.yaml
+                        git commit -m "ci: update image tag to ${IMAGE_TAG}"
+                        git push https://\${GIT_USER}:\${GIT_TOKEN}@github.com/tirjak/demo-project.git HEAD:${env.BRANCH_NAME}
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline finished.'
+        }
+        failure {
+            echo "Pipeline FAILED — branch: ${env.BRANCH_NAME}, build: #${env.BUILD_NUMBER}"
+        }
+    }
+}
