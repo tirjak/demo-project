@@ -124,7 +124,8 @@ pipeline {
                 script {
                     sh 'mvn package -DskipTests'
                     def gitCommit = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                    IMAGE_TAG  = "${gitCommit}-${BUILD_NUMBER}"
+                    def branchPrefix = (env.IS_MAIN == 'true') ? 'main' : 'feature'
+                    IMAGE_TAG  = "${branchPrefix}-${gitCommit}-${BUILD_NUMBER}"
                     FULL_IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
                     // Build amd64 locally and save as Docker-format tar for Trivy
                     sh """
