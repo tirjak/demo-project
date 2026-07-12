@@ -92,10 +92,10 @@ pipeline {
                 script {
                     sh 'mvn package -DskipTests'
                     def gitCommit = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                    // BRANCH_NAME = 'main' for direct pushes, 'PR-N' for pull requests
-                    def isMain     = (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master')
-                    def branchPrefix = isMain ? 'main' : 'feature'
-                    IMAGE_TAG  = "${branchPrefix}-${gitCommit}-${BUILD_NUMBER}"
+                    // Sanitize branch name for Docker tag: replace '/' with '-'
+                    // e.g. feature/auth → feature-auth, PR-1 → PR-1, main → main
+                    def sanitizedBranch = env.BRANCH_NAME.replaceAll('/', '-')
+                    IMAGE_TAG  = "${sanitizedBranch}-${gitCommit}-${BUILD_NUMBER}"
                     FULL_IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
                     // Build amd64 locally and save as Docker-format tar for Trivy
                     sh """
