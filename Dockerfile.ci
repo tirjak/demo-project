@@ -23,5 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # ── Trivy ─────────────────────────────────────────────────────────────────
     && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
        | sh -s -- -b /usr/local/bin \
+    # ── Git safe.directory (fixes "dubious ownership" when jnlp and build
+    #    containers run as different UIDs sharing the same workspace volume) ──
+    && git config --system --add safe.directory '*' \
     # ── Cleanup ───────────────────────────────────────────────────────────────
     && rm -rf /var/lib/apt/lists/* /tmp/awscliv2.zip /tmp/aws

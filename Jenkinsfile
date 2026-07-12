@@ -27,6 +27,10 @@ spec:
       value: tcp://localhost:2375
     - name: DOCKER_TLS_VERIFY
       value: ""
+    volumeMounts:
+    - name: aws-credentials
+      mountPath: /root/.aws
+      readOnly: true
   - name: dind
     image: docker:dind
     securityContext:
@@ -40,6 +44,9 @@ spec:
   volumes:
   - name: docker-storage
     emptyDir: {}
+  - name: aws-credentials
+    secret:
+      secretName: aws-credentials
 '''
             defaultContainer 'build'
         }
