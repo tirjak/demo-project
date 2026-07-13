@@ -1,68 +1,14 @@
-// Pipeline-level Groovy variables — the only reliable way to share
-// computed values (image tag, full ECR path) across stages in a
-// Declarative Pipeline. Closure variables are serializable Strings
-// and do not suffer from the env.X cross-stage propagation issue.
 def IMAGE_TAG  = ''
 def FULL_IMAGE = ''
 
 pipeline {
-    // Each build runs inside a fresh EKS pod with two containers:
-    //   build — CI image (JDK 17, Maven, Docker CLI, AWS CLI, Trivy)
-    //   dind  — Docker-in-Docker daemon (EKS nodes use containerd; no host socket available)
-    // Docker CLI in 'build' talks to the DinD daemon via tcp://localhost:2375
     agent {
         kubernetes {
             cloud 'minikube'
-            yaml '''
-apiVersion: v1
-kind: Pod
-spec:
-  initContainers:
-  - name: qemu-install
-    image: tonistiigi/binfmt:latest
-    args: ["--install", "all"]
-    securityContext:
-      privileged: true
-  containers:
-  - name: build
-    image: jenkins-agent:latest
-    imagePullPolicy: Never
-    command: [cat]
-    tty: true
-    env:
-    - name: DOCKER_HOST
-      value: tcp://localhost:2375
-    - name: DOCKER_TLS_VERIFY
-      value: ""
-    volumeMounts:
-    - name: aws-credentials
-      mountPath: /root/.aws
-      readOnly: true
-  - name: dind
-    image: docker:dind
-    securityContext:
-      privileged: true
-    env:
-    - name: DOCKER_TLS_CERTDIR
-      value: ""
-    volumeMounts:
-    - name: docker-storage
-      mountPath: /var/lib/docker
-  volumes:
-  - name: docker-storage
-    emptyDir: {}
-  - name: aws-credentials
-    secret:
-      secretName: aws-credentials
-'''
+            label 'multiarch-pod-semtech'
             defaultContainer 'build'
         }
     }
-
-    // Webhook triggers are configured at the Multibranch Pipeline job level
-    // (GitHub Branch Source plugin → "push" + "pull_request" events).
-    // Jenkins automatically sets env.BRANCH_NAME for branch builds
-    // and env.CHANGE_ID / env.CHANGE_BRANCH for PR builds.
 
     environment {
         ECR_REGISTRY   = '348165962256.dkr.ecr.us-east-1.amazonaws.com'
@@ -74,7 +20,6 @@ spec:
     stages {
         stage('Checkout Code') {
             steps {
-                // Multibranch Pipeline: checkout scm checks out the branch Jenkins discovered
                 checkout scm
             }
         }
@@ -114,7 +59,7 @@ spec:
         stage('sonarQube Analysis') {
             steps {
                 echo 'Starting SonarQube analysis...'
-                withSonarQubeEnv('sonar_server') { // Ensure 'SonarQube' matches your SonarQube server configuration in Jenkins
+                withSonarQubeEnv('sonar_server') { 
                     sh 'mvn sonar:sonar -Dsonar.projectKey=demo-project -Dsonar.host.url=$SONAR_HOST_URL'
                 }
             }

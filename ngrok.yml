@@ -1,9 +1,0 @@
-version: "3"
-agent:
-  authtoken: 3GOLQLUIYb21eH6tiTxnz6na6Yw_7SV312RfZVT6oFDsBihvt
-
-tunnels:
-  jenkins:
-    proto: http
-    addr: 8080
-    domain: budget-trident-freckles.ngrok-free.dev
