@@ -52,13 +52,6 @@ demo-project/
 ├── pom.xml                              # Spring Boot + JaCoCo
 ├── Dockerfile                           # eclipse-temurin:17-jre-alpine
 ├── Jenkinsfile                          # Jenkins declarative pipeline
-└── .github/workflows/
-    ├── feature-branch.yml               # Caller: feature branch
-    ├── main-merge.yml                   # Caller: main branch
-    ├── reusable-build.yml               # mvn verify + artifact upload
-    ├── reusable-sonar.yml               # SonarQube scan
-    ├── reusable-docker-ecr.yml          # Docker build + Trivy + ECR push
-    └── reusable-update-manifest.yml     # Update k8s/deployment.yaml
 ```
 
 ---
@@ -82,17 +75,7 @@ demo-project/
 | `AWS_REGION`     | `us-east-1` |
 | `ECR_REGISTRY`   | `123456789012.dkr.ecr.us-east-1.amazonaws.com` |
 | `ECR_REPOSITORY` | `demo-project` |
-| `SONAR_HOST_URL` | `http://your-sonarqube-server:9000` |
-
-#### IAM permissions required
-
-The IAM user needs:
-- `ecr:GetAuthorizationToken`
-- `ecr:BatchCheckLayerAvailability`
-- `ecr:InitiateLayerUpload` / `UploadLayerPart` / `CompleteLayerUpload`
-- `ecr:PutImage`
-
-Attach the AWS managed policy **`AmazonEC2ContainerRegistryPowerUser`** for simplicity.
+| `SONAR_HOST_URL` | `http://sonarqube-server:9000` |
 
 #### Create the ECR repository (one time)
 
@@ -136,7 +119,7 @@ sonarcloud.io → My Account → Security.
 
 | Name | Example value |
 |---|---|
-| `SONAR_HOST_URL` | `http://your-sonarqube:9000` |
+| `SONAR_HOST_URL` | `http://sonarqube:9000` |
 | `ECR_REGISTRY` | `123456789012.dkr.ecr.us-east-1.amazonaws.com` |
 | `ECR_REPOSITORY` | `demo-project` |
 | `AWS_REGION` | `us-east-1` |
