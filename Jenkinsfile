@@ -59,7 +59,7 @@ pipeline {
         stage('sonarQube Analysis') {
             steps {
                 echo 'Starting SonarQube analysis...'
-                withSonarQubeEnv('sonar_server') { // Ensure 'SonarQube' matches your SonarQube server configuration in Jenkins
+                withSonarQubeEnv('sonar_server') { 
                     sh 'mvn sonar:sonar -Dsonar.projectKey=demo-project -Dsonar.host.url=$SONAR_HOST_URL'
                 }
             }
