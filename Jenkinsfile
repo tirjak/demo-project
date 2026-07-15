@@ -14,7 +14,7 @@ pipeline {
         ECR_REGISTRY   = '348165962256.dkr.ecr.us-east-1.amazonaws.com'
         ECR_REPOSITORY = 'semtech_demo_image'
         AWS_REGION     = 'us-east-1'
-        SONAR_HOST_URL = 'https://budget-trident-freckles.ngrok-free.dev'
+        SONAR_HOST_URL = 'http://host.minikube.internal:9000'
     }
 
     stages {
@@ -65,19 +65,19 @@ pipeline {
             }
         }
 
-        // stage('OWASP Dependency Check') {
-        //     steps {
-        //         withCredentials([string(credentialsId: 'NVD_API_KEY_OWASP', variable: 'NVD_API_KEY')]) {
-        //             dependencyCheck additionalArguments: "--scan ./ --format XML --format HTML --out ./dependency-check-report --disableYarnAudit --disableNodeAudit --nvdApiKey ${NVD_API_KEY}",
-        //                             odcInstallation: 'OWASP-DC'
-        //         }
-        //     }
-        //     post {
-        //         always {
-        //             dependencyCheckPublisher pattern: 'dependency-check-report/dependency-check-report.xml'
-        //         }
-        //     }
-        // }
+        stage('OWASP Dependency Check') {
+            steps {
+                withCredentials([string(credentialsId: 'NVD_API_KEY_OWASP', variable: 'NVD_API_KEY')]) {
+                    dependencyCheck additionalArguments: "--scan ./ --format XML --format HTML --out ./dependency-check-report --disableYarnAudit --disableNodeAudit --nvdApiKey ${NVD_API_KEY}",
+                                    odcInstallation: 'OWASP-DC'
+                }
+            }
+            post {
+                always {
+                    dependencyCheckPublisher pattern: 'dependency-check-report/dependency-check-report.xml'
+                }
+            }
+        }
 
         stage('Docker Build') {
             steps {
