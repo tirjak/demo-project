@@ -168,7 +168,7 @@ pipeline {
                         git config user.name "Jenkins CI"
                         git add k8s/deployment.yaml
                         git commit -m "ci: update image tag to ${IMAGE_TAG}"
-                        git push https://\${GIT_USER}:\${GIT_TOKEN}@github.com/tirjak/demo-project.git HEAD:${env.BRANCH_NAME}
+                        git push https://\${GIT_USER}:\${GIT_TOKEN}@git@github.com:tirjak/demo-project-k8s.git HEAD:main
                     """
                 }
             }
