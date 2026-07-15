@@ -17,6 +17,12 @@ pipeline {
         SONAR_HOST_URL = 'http://host.minikube.internal:9000'
     }
 
+    // ====== ADDED TRIGGERS BLOCK FOR HIGH FREQUENCY SCM POLLING ======
+    triggers {
+        pollSCM('* * * * *') // Checks every 1 minute (Jenkins minimum native cron precision)
+    }
+    // =================================================================
+
     stages {
         stage('Checkout Code') {
             steps {
@@ -31,70 +37,78 @@ pipeline {
             }
         }
 
-        stage('Unit Tests') {
-            steps {
-                sh 'mvn test'
-            }
-            post {
-                always {
-                    junit testResults: 'target/surefire-reports/*.xml',
-                          allowEmptyResults: true
+        // ==========================================
+        // PARALLEL PHASE: Testing/Sonar vs OWASP
+        // ==========================================
+        stage('Tests & CodeAnalysis & OWASP') {
+            parallel {
+                stage('Tests & Quality checks') {
+                    stages {
+                        stage('Unit Tests') {
+                            steps {
+                                sh 'mvn test'
+                            }
+                            post {
+                                always {
+                                    junit testResults: 'target/surefire-reports/*.xml',
+                                          allowEmptyResults: true
+                                }
+                            }
+                        }
+                        
+                        stage('Code Coverage') {
+                            steps {
+                                sh 'mvn jacoco:report'
+                            }
+                            post {
+                                always {
+                                    recordCoverage(
+                                        tools: [[parser: 'JACOCO', pattern: 'target/site/jacoco/jacoco.xml']]
+                                    )
+                                }
+                            }
+                        }
+
+                        stage('sonarQube Analysis') {
+                            steps {
+                                echo 'Starting SonarQube analysis...'
+                                withSonarQubeEnv('sonar_server') { 
+                                    sh 'mvn sonar:sonar -Dsonar.projectKey=demo-project -Dsonar.host.url=$SONAR_HOST_URL'
+                                }
+                            }
+                        }
+                    }
+                }
+
+                stage('OWASP Dependency Check') {
+                    steps {
+                        withCredentials([string(credentialsId: 'NVD_API_KEY_OWASP', variable: 'NVD_API_KEY')]) {
+                            dependencyCheck additionalArguments: "--scan ./ --format XML --format HTML --out ./dependency-check-report --disableYarnAudit --disableNodeAudit --nvdApiKey ${NVD_API_KEY}",
+                                          odcInstallation: 'OWASP-DC'
+                        }
+                    }
+                    post {
+                        always {
+                            dependencyCheckPublisher pattern: 'dependency-check-report/dependency-check-report.xml'
+                        }
+                    }
                 }
             }
         }
-
-        stage('Code Coverage') {
-            steps {
-                sh 'mvn jacoco:report'
-            }
-            post {
-                always {
-                    recordCoverage(
-                        tools: [[parser: 'JACOCO', pattern: 'target/site/jacoco/jacoco.xml']]
-                    )
-                }
-            }
-        }
-
-        stage('sonarQube Analysis') {
-            steps {
-                echo 'Starting SonarQube analysis...'
-                withSonarQubeEnv('sonar_server') { 
-                    sh 'mvn sonar:sonar -Dsonar.projectKey=demo-project -Dsonar.host.url=$SONAR_HOST_URL'
-                }
-            }
-        }
-
-        // stage('OWASP Dependency Check') {
-        //     steps {
-        //         withCredentials([string(credentialsId: 'NVD_API_KEY_OWASP', variable: 'NVD_API_KEY')]) {
-        //             dependencyCheck additionalArguments: "--scan ./ --format XML --format HTML --out ./dependency-check-report --disableYarnAudit --disableNodeAudit --nvdApiKey ${NVD_API_KEY}",
-        //                             odcInstallation: 'OWASP-DC'
-        //         }
-        //     }
-        //     post {
-        //         always {
-        //             dependencyCheckPublisher pattern: 'dependency-check-report/dependency-check-report.xml'
-        //         }
-        //     }
-        // }
 
         stage('Docker Build') {
             steps {
                 script {
-                    // Wait for the DinD sidecar daemon to be ready
+                     // Wait for the DinD sidecar daemon to be ready
                     sh 'until docker info > /dev/null 2>&1; do echo "Waiting for DinD..."; sleep 2; done'
                     sh 'mvn package -DskipTests'
                     def gitCommit = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                    // Sanitize branch name for Docker tag: replace '/' with '-'
-                    // e.g. feature/auth → feature-auth, PR-1 → PR-1, main → main
                     def sanitizedBranch = env.BRANCH_NAME.replaceAll('/', '-')
-                    // Assign pipeline-level closure variables (not env.*) so they
-                    // are reliably available in all subsequent stages
+                    
                     IMAGE_TAG  = "${sanitizedBranch}-${gitCommit}-${env.BUILD_NUMBER}"
                     FULL_IMAGE = "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:${IMAGE_TAG}"
                     echo "Building image: ${FULL_IMAGE}"
-                    // Build for amd64 inside the EKS pod and save as tar for Trivy
+                    
                     sh """
                         docker build --platform linux/amd64 -t ${FULL_IMAGE} .
                         docker save ${FULL_IMAGE} -o image.tar
@@ -106,16 +120,6 @@ pipeline {
         stage('Trivy Image Scan') {
             steps {
                 sh 'curl -sO https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl'
-                // sh '''
-                //     mkdir -p trivy-reports
-                //     trivy image \
-                //         --exit-code 1 \
-                //         --format template \
-                //         --template "@html.tpl" \
-                //         --severity HIGH,CRITICAL \
-                //         --input image.tar \
-                //         --output trivy-reports/security-dashboard.html
-                // '''
                 sh '''
                     mkdir -p trivy-reports
                     trivy image \
@@ -171,7 +175,6 @@ pipeline {
                 }
             }
         }
-
     }
 
     post {
