@@ -15,6 +15,8 @@ pipeline {
         ECR_REPOSITORY = 'semtech_demo_image'
         AWS_REGION     = 'us-east-1'
         SONAR_HOST_URL = 'http://host.minikube.internal:9000'
+        K8S_REPO_URL   = 'github.com/tirjak/demo-project-k8s.git'
+        K8S_REPO_BRANCH = 'main'
     }
 
     triggers {
@@ -163,12 +165,14 @@ pipeline {
                                                   usernameVariable: 'GIT_USER',
                                                   passwordVariable: 'GIT_TOKEN')]) {
                     sh """
-                        sed -i "s|image: ${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:.*|image: ${FULL_IMAGE}|" k8s/deployment.yaml
-                        git config user.email "jenkins@demo-project.com"
-                        git config user.name "Jenkins CI"
-                        git add k8s/deployment.yaml
-                        git commit -m "ci: update image tag to ${IMAGE_TAG}"
-                        git push https://\${GIT_USER}:\${GIT_TOKEN}@git@github.com:tirjak/demo-project-k8s.git HEAD:main
+                        rm -rf k8s-manifests-repo
+                        git clone https://\${GIT_USER}:\${GIT_TOKEN}@${env.K8S_REPO_URL} -b ${env.K8S_REPO_BRANCH} k8s-manifests-repo
+                        sed -i "s|image: ${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:.*|image: ${FULL_IMAGE}|" k8s-manifests-repo/k8s/deployment.yaml
+                        git -C k8s-manifests-repo config user.email "jenkins@demo-project.com"
+                        git -C k8s-manifests-repo config user.name "Jenkins CI"
+                        git -C k8s-manifests-repo add k8s/deployment.yaml
+                        git -C k8s-manifests-repo commit -m "ci: update image tag to ${IMAGE_TAG}" || true
+                        git -C k8s-manifests-repo push origin ${env.K8S_REPO_BRANCH}
                     """
                 }
             }
