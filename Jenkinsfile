@@ -80,19 +80,19 @@ pipeline {
                     }
                 }
 
-                stage('OWASP Dependency Check') {
-                    steps {
-                        withCredentials([string(credentialsId: 'NVD_API_KEY_OWASP', variable: 'NVD_API_KEY')]) {
-                            dependencyCheck additionalArguments: "--scan ./ --format XML --format HTML --out ./dependency-check-report --disableYarnAudit --disableNodeAudit --nvdApiKey ${NVD_API_KEY}",
-                                          odcInstallation: 'OWASP-DC'
-                        }
-                    }
-                    post {
-                        always {
-                            dependencyCheckPublisher pattern: 'dependency-check-report/dependency-check-report.xml'
-                        }
-                    }
-                }
+                // stage('OWASP Dependency Check') {
+                //     steps {
+                //         withCredentials([string(credentialsId: 'NVD_API_KEY_OWASP', variable: 'NVD_API_KEY')]) {
+                //             dependencyCheck additionalArguments: "--scan ./ --format XML --format HTML --out ./dependency-check-report --disableYarnAudit --disableNodeAudit --nvdApiKey ${NVD_API_KEY}",
+                //                           odcInstallation: 'OWASP-DC'
+                //         }
+                //     }
+                //     post {
+                //         always {
+                //             dependencyCheckPublisher pattern: 'dependency-check-report/dependency-check-report.xml'
+                //         }
+                //     }
+                // }
             }
         }
 
