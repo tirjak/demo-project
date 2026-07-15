@@ -17,11 +17,9 @@ pipeline {
         SONAR_HOST_URL = 'http://host.minikube.internal:9000'
     }
 
-    // ====== ADDED TRIGGERS BLOCK FOR HIGH FREQUENCY SCM POLLING ======
     triggers {
         pollSCM('* * * * *') // Checks every 1 minute (Jenkins minimum native cron precision)
     }
-    // =================================================================
 
     stages {
         stage('Checkout Code') {
