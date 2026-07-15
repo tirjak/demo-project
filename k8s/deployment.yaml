@@ -18,7 +18,7 @@ spec:
         - name: semtech-project
           # This line is updated automatically by the CI pipeline after every
           # successful main-branch build. Do not edit manually.
-          image: 348165962256.dkr.ecr.us-east-1.amazonaws.com/semtech_demo_image:main-86575ac-10
+          image: 348165962256.dkr.ecr.us-east-1.amazonaws.com/semtech_demo_image:main-de06fa0-11
           ports:
             - containerPort: 8080
           resources:
