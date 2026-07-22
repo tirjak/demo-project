@@ -5,14 +5,14 @@ pipeline {
     agent {
         kubernetes {
             cloud 'minikube'
-            label 'multiarch-pod-semtech'
+            label 'multiarch-pod-jenkins'
             defaultContainer 'build'
         }
     }
 
     environment {
         ECR_REGISTRY   = 'xxxxxxxxx.dkr.ecr.us-east-1.amazonaws.com'
-        ECR_REPOSITORY = 'semtech_demo_image'
+        ECR_REPOSITORY = 'demo_image'
         AWS_REGION     = 'us-east-1'
         SONAR_HOST_URL = 'http://host.minikube.internal:9000'
         K8S_REPO_URL   = 'github.com/tirjak/demo-project-k8s.git'
