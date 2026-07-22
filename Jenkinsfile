@@ -11,7 +11,7 @@ pipeline {
     }
 
     environment {
-        ECR_REGISTRY   = '348165962256.dkr.ecr.us-east-1.amazonaws.com'
+        ECR_REGISTRY   = 'xxxxxxxxx.dkr.ecr.us-east-1.amazonaws.com'
         ECR_REPOSITORY = 'semtech_demo_image'
         AWS_REGION     = 'us-east-1'
         SONAR_HOST_URL = 'http://host.minikube.internal:9000'
